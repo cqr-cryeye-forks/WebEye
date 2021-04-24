@@ -1,9 +1,13 @@
 #!/usr/bin/env python
 # coding=utf-8
 # author = zerokeeper
+import json
 
 from gevent import monkey
 from gevent import Greenlet
+
+from utils import parse_args
+
 monkey.patch_all()
 import gevent
 from gevent.queue import Queue
@@ -19,6 +23,7 @@ import urlparse
 
 sys.setrecursionlimit(10000)
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
+
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 tasks = Queue()
@@ -83,9 +88,9 @@ class WebEye(Greenlet):
 
     def discern_from_header(self, name, discern_type, key, reg):
         if "Server" in self.headers:
-            self.cms_list.add("Server:"+self.headers["Server"])
+            self.cms_list.add("Server:" + self.headers["Server"])
         if "X-Powered-By" in self.headers:
-            self.cms_list.add("X-Powered-By:"+self.headers["X-Powered-By"])
+            self.cms_list.add("X-Powered-By:" + self.headers["X-Powered-By"])
         if key in self.headers and (re.search(reg, self.headers[key], re.I)):
             self.cms_list.add(name)
         else:
@@ -109,65 +114,60 @@ class WebEye(Greenlet):
             # print e
             pass
 
-    def get_whois(self,name):
+    def get_whois(self, name):
         try:
             domain = urlparse.urlparse(self.target).netloc
 
             # if domain is ip,stop querying domain.
-            result1 = re.search("\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}",domain)
+            result1 = re.search("\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}", domain)
             if result1:
                 return
             # remove port
-            result2 = re.search("\:\d{1,5}$",domain)
+            result2 = re.search("\:\d{1,5}$", domain)
             if result2:
-            	domain = domain.split(":")[0]
-            	
+                domain = domain.split(":")[0]
+
             # get domain's ip
             try:
                 ip = socket.gethostbyname(domain)
-                self.cms_list.add("IP:"+ip)
-            except Exception,e:
+                self.cms_list.add("IP:" + ip)
+            except Exception, e:
                 # print e
                 pass
 
-            if re.match("^www\.",domain):
-                domain = domain.strip("www.") 
+            if re.match("^www\.", domain):
+                domain = domain.strip("www.")
             who = pythonwhois.get_whois(domain)
 
             # get whois
             if who["contacts"]["registrant"]["name"] is not None:
-                self.cms_list.add("Domain_User:"+who["contacts"]["registrant"]["name"].encode("utf8"))
+                self.cms_list.add("Domain_User:" + who["contacts"]["registrant"]["name"].encode("utf8"))
             if who["contacts"]["registrant"]["email"] is not None:
-                self.cms_list.add("Domain_Email:"+who["contacts"]["registrant"]["email"].encode("utf8"))
+                self.cms_list.add("Domain_Email:" + who["contacts"]["registrant"]["email"].encode("utf8"))
             if who["contacts"]["registrant"]["phone"] is not None:
-                self.cms_list.add("Domain_Phone:"+who["contacts"]["registrant"]["phone"].encode("utf8"))
+                self.cms_list.add("Domain_Phone:" + who["contacts"]["registrant"]["phone"].encode("utf8"))
             if who["registrar"] is not None:
-                self.cms_list.add("Domain_Registrar:"+who["registrar"][0].encode("utf8"))
+                self.cms_list.add("Domain_Registrar:" + who["registrar"][0].encode("utf8"))
             if who["nameservers"] is not None:
-                name_servers=[]
+                name_servers = []
                 for i in who["nameservers"]:
                     name_servers.append(i.encode('UTF8'))
-                self.cms_list.add("Domai_name_servers:"+str(name_servers).encode("utf8"))
-        except Exception,e:
+                self.cms_list.add("Domai_name_servers:" + str(name_servers).encode("utf8"))
+        except Exception, e:
             # print e
             pass
 
 
-
 def main():
-    parser = optparse.OptionParser(
-        usage="usage: %prog [-u] url", version="%prog 1.0")
-    parser.add_option('-u', '--url', dest='url', type='string', default=None,
-                      help='The url of target.')
-    (options, args) = parser.parse_args()
-    if options.url:
-        res = WebEye(options.url)
-        res.run()
-        cms = list(res.cms_list)
-        print cms
-    else:
-        parser.print_help()
-        sys.exit(0)
+    args = parse_args()
+    res = WebEye(args.url)
+    res.run()
+    cms = list(res.cms_list)
+    print cms
+    cms = [{'data': c} for c in cms]
+    with open(args.output, 'w') as f:
+        json.dump(cms, f, indent=2)
+
 
 if __name__ == '__main__':
     main()
